@@ -82,6 +82,7 @@ done
 docker run --rm \
   -e GOCACHE='/tmp/.cache' \
   -e GOPATH="${GOPATH}" \
+  -e GO_VERSION="1.21.9" \
   "${go_env[@]}" \
   "${proxy_env[@]}" \
   --user "$(id -u):$(id -g)" \
