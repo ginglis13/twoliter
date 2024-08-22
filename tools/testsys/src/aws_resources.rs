@@ -311,6 +311,14 @@ pub(crate) async fn ec2_karpenter_crd<'a>(
         .device_mappings(device_mappings)
         .assume_role(bottlerocket_input.crd_input.config.agent_role.clone())
         .depends_on(cluster_name)
+        .eks_service_endpoint(
+            bottlerocket_input
+                .crd_input
+                .config
+                .dev
+                .eks_service_endpoint
+                .clone(),
+        )
         .image(
             bottlerocket_input
                 .crd_input
