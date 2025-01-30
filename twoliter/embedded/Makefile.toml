@@ -33,7 +33,7 @@ BUILDSYS_VERSION_BUILD_TIMESTAMP = { script = ["git show -s --format=%ct HEAD ||
 # use a different Release.toml.
 BUILDSYS_RELEASE_CONFIG_PATH = "${BUILDSYS_ROOT_DIR}/Release.toml"
 # This can be overridden with -e to build a different variant from the variants/ directory
-BUILDSYS_VARIANT = { script = ['echo "${BUILDSYS_VARIANT:-aws-k8s-1.24}"'] }
+BUILDSYS_VARIANT = { script = ['echo "${BUILDSYS_VARIANT:-aws-k8s-1.32}"'] }
 # Product name used for file and directory naming
 BUILDSYS_NAME = "bottlerocket"
 # "Pretty" name used to identify OS in os-release, bootloader, etc.
