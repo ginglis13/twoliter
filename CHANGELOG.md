@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[unreleased]: https://github.com/bottlerocket-os/twoliter/compare/v0.7.1...HEAD
+[unreleased]: https://github.com/bottlerocket-os/twoliter/compare/v0.7.2...HEAD
+
+# [0.7.2] - 2025-02-04
+
+### Fixed
+
+- Fix early exit with docker not on path ([#446])
+
+### Changed
+
+- Update default variant to aws-k8s-1.32 ([#447])
+- Update testsys to v0.0.15 ([#448])
+
+[#446]: https://github.com/bottlerocket-os/twoliter/pull/446
+[#447]: https://github.com/bottlerocket-os/twoliter/pull/447
+[#448]: https://github.com/bottlerocket-os/twoliter/pull/448
+
+[0.7.2]: https://github.com/bottlerocket-os/twoliter/compare/v0.7.1...v0.7.2
 
 ## [0.7.1] - 2025-01-23
 
