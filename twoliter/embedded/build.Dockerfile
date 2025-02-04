@@ -294,6 +294,8 @@ RUN --mount=target=/host \
       EXTERNAL_KIT_REPOS+=("--repofrompath=${REPO_NAME},${REPO_PATH}" --enablerepo "${REPO_NAME}"); \
     done && \
     echo "${EXTERNAL_KIT_REPOS[@]}" && \
+    mkdir -p /local/rpms && \
+    download_dir_opt="$(dnf install --help | grep -Fwq downloaddir && echo "--downloaddir /local/rpms" ||:)" && \
     dnf -y \
       --disablerepo '*' \
       --repofrompath repo,./rpmbuild/RPMS \
@@ -301,13 +303,14 @@ RUN --mount=target=/host \
       "${KIT_REPOS[@]}" \
       "${EXTERNAL_KIT_REPOS[@]}" \
       --nogpgcheck \
-      --downloadonly \
-      --downloaddir . \
       --forcearch "${ARCH}" \
-      install $(printf "bottlerocket-%s\n" metadata ${PACKAGES}) && \
-    mkdir -p /local/rpms && \
-    mv *.rpm /local/rpms && \
-    createrepo_c /local/rpms && \
+      --setopt=cachedir=/local/rpms \
+      install \
+        --downloadonly \
+	${download_dir_opt} \
+        $(printf "bottlerocket-%s\n" metadata ${PACKAGES}) && \
+    find /local/rpms -mindepth 2 -type f -name '*.rpm' -exec mv -t /local/rpms {} + && \
+    find /local/rpms -mindepth 1 ! -name '*.rpm' -delete && \
     rm /output && \
     rm /bypass && \
     echo ${NOCACHE}
