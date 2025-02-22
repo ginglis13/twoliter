@@ -45,8 +45,7 @@ popd >/dev/null
 
 # Merge them together into a unified archive.
 pushd "${KIT_DIR}" >/dev/null
-tar cf "${OUTPUT_DIR}/${KMOD_KIT_FULL}.tar" "${KMOD_KIT}"
-xz -T0 "${OUTPUT_DIR}/${KMOD_KIT_FULL}.tar"
+XZ_OPT='-T0' tar cfJ "${OUTPUT_DIR}/${KMOD_KIT_FULL}.tar.xz" "${KMOD_KIT}"
 popd >/dev/null
 
 # Create friendly symlinks.
