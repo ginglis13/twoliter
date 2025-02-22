@@ -9,17 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [unreleased]: https://github.com/bottlerocket-os/twoliter/compare/v0.7.3...HEAD
 
-## [0.7.3-rc] - 2024-02-20
+## [0.7.3] - 2024-02-21
 
 ### Changed
 
 - Improve upstream source fallback logging ([#454])
 - Use a consistent length for project build ID ([#456])
-- Update kit metadata schema version to v3 due to changes in advisory generation ([#459])
+- Update kit metadata schema version to v3 due to changes in advisory generation ([#459], [#461])
 
 [#454]: https://github.com/bottlerocket-os/twoliter/pull/454
 [#456]: https://github.com/bottlerocket-os/twoliter/pull/456
 [#459]: https://github.com/bottlerocket-os/twoliter/pull/459
+[#461]: https://github.com/bottlerocket-os/twoliter/pull/461
 
 [0.7.3]: https://github.com/bottlerocket-os/twoliter/compare/v0.7.1...v0.7.3
 
