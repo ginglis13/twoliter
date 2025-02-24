@@ -416,6 +416,7 @@ done
 [tasks.check]
 dependencies = [
    "check-cargo-version",
+   "check-advisories",
    "unit-tests",
    "check-fmt",
    "check-lints",
@@ -536,6 +537,31 @@ fi
 if [ "${rc}" -ne 0 ]; then
   echo "Found lint warnings. First-party shell code is checked with ShellCheck." >&2
   exit $rc
+fi
+'''
+]
+
+# Task to lint Bottlerocket Security Advisories by checking for non-ASCII characters
+# and verifying that each versioned directory under "advisories" has a corresponding
+# tag on the Twoliter project this task runs against.
+[tasks.check-advisories]
+script_runner = "bash"
+script = [
+'''
+if find advisories -name '*.toml' -type f >/dev/null 2>&1 ; then
+  export LC_ALL=C
+  if grep --include '*.toml' -R -l -P ['\x80'-'\xFF'] advisories ; then
+    echo "error: found non-ASCII characters in advisories" >&2
+    exit 1
+  fi
+
+  for version in $(find advisories/* -type d -not -path advisories/staging); do
+    set +e; grep -q v$(basename ${version})$ <(PAGER= git tag); rc="$?"; set -e;
+    if [ "${rc}" -ne 0  ]; then
+      echo "error: no corresponding tag found for ${version} directory"
+      exit 1
+    fi
+  done
 fi
 '''
 ]
