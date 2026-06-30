@@ -14,4 +14,5 @@ pub mod pcr4;
 pub mod pcr5;
 pub mod pcr6;
 pub mod pcr7;
+pub mod pcr8;
 pub mod pcr9;

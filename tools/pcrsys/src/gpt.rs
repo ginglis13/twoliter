@@ -111,8 +111,8 @@ impl PartitionInfo {
 
 /// Layout of partitions needed for PCR predictions.
 ///
-/// Contains references to the EFI System Partition, boot partitions, and private partition.
-/// Single-bank images will have `boot_b` set to `None`.
+/// Contains references to the EFI System Partition, boot partitions, private partition,
+/// and root partition. Single-bank images will have `boot_b` set to `None`.
 #[derive(Debug)]
 pub struct PartitionLayout {
     /// EFI System Partition (ESP) - contains shim and grub.
@@ -123,6 +123,8 @@ pub struct PartitionLayout {
     pub boot_b: Option<PartitionInfo>,
     /// Private partition - contains bootconfig.
     pub private: PartitionInfo,
+    /// Root partition A - contains settings defaults (storewolf TOML).
+    pub root_a: Option<PartitionInfo>,
 }
 
 /// Extract primary GPT from disk image.
@@ -144,6 +146,9 @@ pub fn extract_primary_gpt<R: Read + Seek>(disk: &mut R) -> Result<Vec<u8>> {
 
 /// Bottlerocket boot partition type GUID.
 const BOTTLEROCKET_BOOT: [u8; 16] = uuid_to_guid(hex!("6b636168 7420 6568 2070 6c616e657421"));
+
+/// Bottlerocket root partition type GUID.
+const BOTTLEROCKET_ROOT: [u8; 16] = uuid_to_guid(hex!("5526016a 1a97 4ea4 b39a b7c8c6ca4502"));
 
 /// Bottlerocket private partition type GUID.
 const BOTTLEROCKET_PRIVATE: [u8; 16] = uuid_to_guid(hex!("440408bb eb0b 4328 a6e5 a29038fad706"));
@@ -185,12 +190,14 @@ pub fn find_partitions<R: Read + Seek>(disk: &mut R) -> Result<PartitionLayout> 
     let boot_b = find_nth(&BOTTLEROCKET_BOOT, 1); // Optional for single-bank
     let private =
         find_nth(&BOTTLEROCKET_PRIVATE, 0).whatever_context("PRIVATE partition not found")?;
+    let root_a = find_nth(&BOTTLEROCKET_ROOT, 0); // Optional for PCR 8
 
     Ok(PartitionLayout {
         efi_a,
         boot_a,
         boot_b,
         private,
+        root_a,
     })
 }
 

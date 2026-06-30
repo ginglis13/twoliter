@@ -22,6 +22,26 @@ pcrsys ami --ami-id ami-0123456789abcdef0 [--region us-west-2] [--profile myprof
 
 The AMI subcommand downloads the root snapshot using coldsnap and retrieves UEFI data from the AMI attributes.
 
+### Predicting PCR 8 (user-data / settings)
+
+Bottlerocket measures merged node settings into PCR 8. Predicting this value requires:
+
+1. **User-data TOML** (`--user-data`) — the settings that will be applied to the instance at boot.
+2. **Settings defaults TOML** (`--settings-defaults`) — the image's baked-in defaults. If not provided, pcrsys attempts to extract defaults from ROOT-A on the disk image. Images using erofs for ROOT-A require this flag.
+
+The defaults TOML is the merged output of a variant's `defaults.d/` directory (e.g., from `bottlerocket-core-kit/sources/settings-defaults/aws-k8s-1.31/defaults.d/`). It corresponds to the file installed at `/usr/share/storewolf/<variant>.toml` on the running system.
+
+```bash
+# PCR 8 prediction with explicit settings defaults (recommended for erofs images)
+pcrsys ami --ami-id ami-0123456789abcdef0 \
+  --user-data /path/to/user-data.toml \
+  --settings-defaults /path/to/aws-k8s-1.31.toml
+
+# PCR 8 prediction from local disk (auto-extracts defaults from ext4 ROOT-A)
+pcrsys disk --image /path/to/disk.img --efi-vars /path/to/efi-vars.json \
+  --user-data /path/to/user-data.toml
+```
+
 ## Output
 
 JSON output with predicted PCR values, keyed by PCR index:
@@ -48,6 +68,7 @@ JSON output with predicted PCR values, keyed by PCR index:
 | 5 | GPT partition table |
 | 6 | Resume events (separator only) |
 | 7 | Secure Boot policy (PK, KEK, db, dbx, SbatLevel, MokListRT) |
+| 8 | Settings measurement (requires `--user-data`; merged defaults + user TOML, canonical JSON) |
 | 9 | Kernel command line (grub.cfg + bootconfig) |
 | 10 | Zero (unused) |
 | 11 | Boot phases (systemd) |

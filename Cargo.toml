@@ -96,6 +96,8 @@ twoliter-tool-unplug = { version = "0.1", path = "twoliter/src/tool-crates/unplu
 unplug = { version = "0.1", path = "tools/unplug", artifact = [ "bin:unplug" ] }
 update-metadata = { version = "0.1", path = "tools/update-metadata" }
 
+bottlerocket-settings-generators = { path = "/home/fedora/bottlerocket-settings-sdk/bottlerocket-settings-generators" }
+
 anyhow = "1"
 async-recursion = "1"
 async-stream = "0.3"

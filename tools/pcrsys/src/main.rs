@@ -13,6 +13,7 @@ mod pcrs;
 mod pe;
 mod platform;
 mod predict;
+mod schnauzer;
 
 use aws_config::profile::ProfileFileCredentialsProvider;
 use aws_types::region::Region;
@@ -51,6 +52,14 @@ enum Command {
         /// Target platform (aws, vmware, metal)
         #[arg(long, value_enum, default_value_t = Platform::Aws)]
         platform: Platform,
+
+        /// Path to user-data TOML file for PCR 8 prediction
+        #[arg(long)]
+        user_data: Option<PathBuf>,
+
+        /// AWS region for simulating schnauzer templates (required when --user-data is provided)
+        #[arg(long)]
+        region: Option<String>,
     },
 
     /// Predict PCRs from an AWS AMI
@@ -66,6 +75,10 @@ enum Command {
         /// AWS profile to use
         #[arg(long)]
         profile: Option<String>,
+
+        /// Path to user-data TOML file for PCR 8 prediction
+        #[arg(long)]
+        user_data: Option<PathBuf>,
     },
 }
 
@@ -79,21 +92,46 @@ async fn main() -> Result<()> {
             image,
             efi_vars,
             platform,
-        } => run_disk(image, efi_vars, *platform),
+            user_data,
+            region,
+        } => run_disk(image, efi_vars, *platform, user_data.as_ref(), region.as_deref()).await,
         Command::Ami {
             ami_id,
             region,
             profile,
-        } => run_ami(ami_id, region.as_ref(), profile.as_ref()).await,
+            user_data,
+        } => {
+            run_ami(
+                ami_id,
+                region.as_ref(),
+                profile.as_ref(),
+                user_data.as_ref(),
+            )
+            .await
+        }
     }
 }
 
 /// Run PCR prediction from a local disk image file.
-fn run_disk(image: &PathBuf, efi_vars_path: &PathBuf, platform: Platform) -> Result<()> {
+async fn run_disk(
+    image: &PathBuf,
+    efi_vars_path: &PathBuf,
+    platform: Platform,
+    user_data_path: Option<&PathBuf>,
+    region: Option<&str>,
+) -> Result<()> {
     let efi_vars_json = fs::read_to_string(efi_vars_path).whatever_context(format!(
         "failed to read efi-vars: {}",
         efi_vars_path.display()
     ))?;
+
+    let user_data = match user_data_path {
+        Some(path) => Some(
+            fs::read_to_string(path)
+                .whatever_context(format!("failed to read user-data: {}", path.display()))?,
+        ),
+        None => None,
+    };
 
     let mut disk = fs::File::open(image)
         .whatever_context(format!("failed to open disk image: {}", image.display()))?;
@@ -101,7 +139,7 @@ fn run_disk(image: &PathBuf, efi_vars_path: &PathBuf, platform: Platform) -> Res
     let efi_vars: efi::EfiVars =
         serde_json::from_str(&efi_vars_json).whatever_context("failed to parse efi-vars.json")?;
 
-    let predictions = predict_pcrs(&efi_vars, &mut disk, platform)?;
+    let predictions = predict_pcrs(&efi_vars, &mut disk, image, platform, user_data.as_deref(), region).await?;
     let json = serde_json::to_string_pretty(&predictions)
         .whatever_context("failed to serialize predictions")?;
     println!("{json}");
@@ -110,7 +148,12 @@ fn run_disk(image: &PathBuf, efi_vars_path: &PathBuf, platform: Platform) -> Res
 }
 
 /// Run PCR prediction from an AWS AMI by downloading its snapshot.
-async fn run_ami(ami_id: &str, region: Option<&String>, profile: Option<&String>) -> Result<()> {
+async fn run_ami(
+    ami_id: &str,
+    region: Option<&String>,
+    profile: Option<&String>,
+    user_data_path: Option<&PathBuf>,
+) -> Result<()> {
     let config = build_client_config(region, profile).await;
 
     let ec2_client = aws_sdk_ec2::Client::new(&config);
@@ -119,6 +162,14 @@ async fn run_ami(ami_id: &str, region: Option<&String>, profile: Option<&String>
     let efi_vars = aws::ami::get_uefi_data(&ec2_client, ami_id).await?;
 
     let snapshot_id = aws::ami::get_root_snapshot_id(&ec2_client, ami_id).await?;
+
+    let user_data = match user_data_path {
+        Some(path) => Some(
+            fs::read_to_string(path)
+                .whatever_context(format!("failed to read user-data: {}", path.display()))?,
+        ),
+        None => None,
+    };
 
     let temp_file =
         tempfile::NamedTempFile::new().whatever_context("failed to create temp file")?;
@@ -132,7 +183,15 @@ async fn run_ami(ami_id: &str, region: Option<&String>, profile: Option<&String>
     let mut disk =
         fs::File::open(temp_file.path()).whatever_context("failed to open downloaded snapshot")?;
 
-    let predictions = predict_pcrs(&efi_vars, &mut disk, Platform::Aws)?;
+    let predictions = predict_pcrs(
+        &efi_vars,
+        &mut disk,
+        temp_file.path(),
+        Platform::Aws,
+        user_data.as_deref(),
+        region.map(|s| s.as_str()),
+    )
+    .await?;
     let json = serde_json::to_string_pretty(&predictions)
         .whatever_context("failed to serialize predictions")?;
     println!("{json}");
@@ -165,10 +224,13 @@ async fn build_client_config(region: Option<&String>, profile: Option<&String>) 
 }
 
 /// Run PCR prediction using EFI variables and a disk image file.
-fn predict_pcrs(
+async fn predict_pcrs(
     efi_vars: &efi::EfiVars,
     disk: &mut fs::File,
+    disk_path: &std::path::Path,
     platform: Platform,
+    user_data: Option<&str>,
+    region: Option<&str>,
 ) -> Result<PcrPredictions> {
     let gpt_bin = gpt::extract_primary_gpt(disk)?;
     let partitions = gpt::find_partitions(disk)?;
@@ -178,6 +240,12 @@ fn predict_pcrs(
     let grub_cfg = diskfs::extract_grub_cfg(disk, &partitions)?;
     let bootconfig = diskfs::extract_bootconfig(disk, &partitions)?;
     let boot_partuuid = gpt::get_boot_partuuid(disk)?;
+
+    let settings_extracted = if user_data.is_some() {
+        diskfs::extract_settings_defaults(disk_path, &partitions).ok()
+    } else {
+        None
+    };
 
     let ctx = PcrContext::builder()
         .platform(platform)
@@ -190,6 +258,11 @@ fn predict_pcrs(
         .grub_cfg(&grub_cfg)
         .bootconfig(&bootconfig)
         .boot_partuuid(&boot_partuuid)
+        .maybe_user_data(user_data)
+        .maybe_settings_defaults(settings_extracted.as_ref().map(|s| s.toml_content.as_str()))
+        .maybe_region(region)
+        .maybe_variant_id(settings_extracted.as_ref().map(|s| s.variant_id.as_str()))
+        .maybe_arch(settings_extracted.as_ref().map(|s| s.arch.as_str()))
         .build();
 
     PcrPredictions::new()
@@ -201,6 +274,7 @@ fn predict_pcrs(
         .try_extend(|| pcrs::pcr5::predict(&ctx))?
         .try_extend(|| pcrs::pcr6::predict(&ctx))?
         .try_extend(|| pcrs::pcr7::predict(&ctx))?
+        .try_extend_async(pcrs::pcr8::predict(&ctx)).await?
         .try_extend(|| pcrs::pcr9::predict(&ctx))?
         .try_extend(|| pcrs::pcr10::predict(&ctx))?
         .try_extend(|| pcrs::pcr11::predict(&ctx))?

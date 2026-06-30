@@ -7,7 +7,7 @@ use crate::gpt::PartitionLayout;
 
 use ext4_view::Ext4;
 use fatfs::{FileSystem, FsOptions};
-use snafu::{whatever, ResultExt};
+use snafu::{whatever, OptionExt, ResultExt};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
 /// Extract shim EFI binary from ESP (EFI-A partition) using fatfs.
@@ -112,6 +112,92 @@ pub fn extract_grub_cfg<R: Read + Seek>(
 
     fs.read("/grub/grub.cfg")
         .whatever_context("failed to read grub.cfg")
+}
+
+/// Extracted settings defaults along with image metadata.
+pub struct SettingsDefaults {
+    pub toml_content: String,
+    pub variant_id: String,
+    pub arch: String,
+}
+
+/// Extract settings defaults TOML from ROOT-A partition using `fsck.erofs`.
+///
+/// ROOT-A is an erofs filesystem. We use `fsck.erofs --extract` with `--offset` to
+/// extract it, then find the storewolf defaults TOML at:
+/// `/<arch>-bottlerocket-linux-gnu/sys-root/usr/share/storewolf/<variant>.toml`
+///
+/// Requires `fsck.erofs` in PATH.
+pub fn extract_settings_defaults(
+    disk_path: &std::path::Path,
+    partitions: &PartitionLayout,
+) -> Result<SettingsDefaults> {
+    let root_a = partitions
+        .root_a
+        .as_ref()
+        .whatever_context("ROOT-A partition not found in disk image")?;
+
+    let offset = root_a.offset_bytes();
+
+    let tmpdir = tempfile::tempdir().whatever_context("failed to create temp dir")?;
+
+    let output = std::process::Command::new("fsck.erofs")
+        .arg(format!("--extract={}", tmpdir.path().display()))
+        .arg(format!("--offset={offset}"))
+        .arg(disk_path)
+        .output()
+        .whatever_context("failed to run fsck.erofs (is it installed?)")?;
+
+    if !output.status.success() {
+        whatever!(
+            "fsck.erofs failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // fsck.erofs preserves directory permissions from the filesystem (e.g. 555 root dir),
+    // which prevents tempdir cleanup. Fix permissions so Drop can remove the tree.
+    let _ = std::process::Command::new("chmod")
+        .args(["-R", "u+rwX"])
+        .arg(tmpdir.path())
+        .status();
+
+    let arch_prefixes = [
+        "x86_64-bottlerocket-linux-gnu",
+        "aarch64-bottlerocket-linux-gnu",
+    ];
+
+    for arch in &arch_prefixes {
+        let storewolf_dir = tmpdir
+            .path()
+            .join(format!("{arch}/sys-root/usr/share/storewolf"));
+        if let Ok(entries) = std::fs::read_dir(&storewolf_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "toml") {
+                    let toml_content = std::fs::read_to_string(&path)
+                        .whatever_context(format!("failed to read {}", path.display()))?;
+                    let variant_id = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let image_arch = if arch.starts_with("x86_64") {
+                        "x86_64"
+                    } else {
+                        "aarch64"
+                    };
+                    return Ok(SettingsDefaults {
+                        toml_content,
+                        variant_id,
+                        arch: image_arch.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    whatever!("no settings defaults TOML found in ROOT-A storewolf directory")
 }
 
 /// Extract bootconfig.data from PRIVATE partition using ext4-view.
@@ -481,6 +567,7 @@ mod tests {
                 start_lba: 4096,
                 end_lba: 6143,
             },
+            root_a: None,
         }
     }
 
@@ -502,6 +589,7 @@ mod tests {
                 start_lba: 0,
                 end_lba: 2047,
             }, // Same as boot_a for testing bootconfig
+            root_a: None,
         }
     }
 
@@ -671,5 +759,22 @@ mod tests {
         let layout = mock_layout_esp();
         let err = extract_shim(&mut cursor, &layout).unwrap_err();
         assert!(err.to_string().contains("BOOT"));
+    }
+
+    #[test]
+    #[ignore] // requires real disk image at pcr8-testing/
+    fn test_extract_settings_defaults_erofs() {
+        let disk_path =
+            std::path::Path::new("../../pcr8-testing/snap-aws-ecs-4-x86_64-dev-civ-xvda");
+        if !disk_path.exists() {
+            eprintln!("skipping: disk image not found");
+            return;
+        }
+        let mut disk = std::fs::File::open(disk_path).unwrap();
+        let partitions = crate::gpt::find_partitions(&mut disk).unwrap();
+        let defaults = extract_settings_defaults(disk_path, &partitions).unwrap();
+        assert!(defaults.toml_content.contains("[settings"));
+        assert!(!defaults.variant_id.is_empty());
+        assert!(!defaults.arch.is_empty());
     }
 }

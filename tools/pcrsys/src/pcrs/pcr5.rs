@@ -146,6 +146,7 @@ mod tests {
                 start_lba: 12288,
                 end_lba: 16383,
             },
+            root_a: None,
         };
         (gpt, layout)
     }
@@ -179,6 +180,7 @@ mod tests {
                 start_lba: 8192,
                 end_lba: 12287,
             },
+            root_a: None,
         };
         (gpt, layout)
     }

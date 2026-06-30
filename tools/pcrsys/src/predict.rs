@@ -27,7 +27,6 @@ pub enum PcrIndex {
     Pcr5 = 5,
     Pcr6 = 6,
     Pcr7 = 7,
-    #[allow(dead_code)]
     Pcr8 = 8,
     Pcr9 = 9,
     Pcr10 = 10,
@@ -67,6 +66,16 @@ pub struct PcrContext<'a> {
     pub bootconfig: &'a [u8],
     #[builder(default)]
     pub boot_partuuid: &'a str,
+    /// User-data TOML string (optional, for PCR 8 prediction).
+    pub user_data: Option<&'a str>,
+    /// Settings defaults TOML extracted from the disk image (optional, for PCR 8 prediction).
+    pub settings_defaults: Option<&'a str>,
+    /// AWS region for schnauzer template simulation (optional, for PCR 8 prediction).
+    pub region: Option<&'a str>,
+    /// Variant ID from the disk image (e.g. "aws-ecs-2").
+    pub variant_id: Option<&'a str>,
+    /// Architecture from the disk image (e.g. "x86_64").
+    pub arch: Option<&'a str>,
 }
 
 /// Collection of PCR predictions for JSON output.
@@ -90,6 +99,17 @@ impl PcrPredictions {
         f: impl FnOnce() -> Result<Option<(PcrIndex, PcrRecord)>>,
     ) -> Result<Self> {
         if let Some((index, record)) = f()? {
+            self.pcrs.insert(index, record);
+        }
+        Ok(self)
+    }
+
+    /// Async variant of try_extend for prediction functions that need async.
+    pub async fn try_extend_async(
+        mut self,
+        f: impl std::future::Future<Output = Result<Option<(PcrIndex, PcrRecord)>>>,
+    ) -> Result<Self> {
+        if let Some((index, record)) = f.await? {
             self.pcrs.insert(index, record);
         }
         Ok(self)
@@ -174,6 +194,7 @@ pub mod test_support {
                 start_lba: 4,
                 end_lba: 5,
             },
+            root_a: None,
         }
     }
 
@@ -200,6 +221,7 @@ pub mod test_support {
                 start_lba: 4,
                 end_lba: 5,
             },
+            root_a: None,
         }
     }
 
